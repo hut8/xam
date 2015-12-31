@@ -1,0 +1,12 @@
+#+TITLE: xam
+
+* Introduction
+XAM is a filesystem metadatabase. It allows you to query a set of files for their metadata, such as asking which files are a specific size or which match a given hash.
+
+* Installation
+If you would like to install it from source, make sure you have a working Go installation, then:
+
+#+begin_src bash
+go get github.com/hut8/xam
+go install github.com/hut8/xam
+#+end_src
