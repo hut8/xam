@@ -22,9 +22,11 @@ func WalkFSTree(fileDataChan chan FileData, rootPath string) {
 	filepath.Walk(
 		rootPath,
 		func(path string, info os.FileInfo, err error) error {
-			fileDataChan <- FileData{
-				FileInfo: info,
-				Path:     path,
+			if !info.IsDir() {
+				fileDataChan <- FileData{
+					FileInfo: info,
+					Path:     path,
+				}
 			}
 			return nil // Never stop
 		})
