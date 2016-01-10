@@ -48,7 +48,7 @@ func HashFile(path string) ([]byte, error) {
 }
 
 func HashFileHex(path string) (string, error) {
-	h, err := hashFile(path)
+	h, err := HashFile(path)
 	if err != nil {
 		return "", err
 	}
@@ -57,7 +57,7 @@ func HashFileHex(path string) (string, error) {
 
 func ComputeHashes(output chan FileData, input chan FileData) {
 	for f := range input {
-		h, err := hashFileHex(f.Path)
+		h, err := HashFileHex(f.Path)
 		f.SHA1 = h
 		f.Err = err
 		output <- f
