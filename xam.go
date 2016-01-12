@@ -6,14 +6,17 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 // FileData represents attributes of file
 type FileData struct {
-	os.FileInfo
-	SHA1 string
-	Path string // relative to root
-	Err  error
+	Path    string      `csv:"path"`
+	Err     error       `csv:"err"`
+	Size    int64       `csv:"size"`
+	Mode    os.FileMode `csv:"mode"`
+	SHA1    string      `csv:"sha1"`
+	ModTime time.Time   `csv:"modified"`
 }
 
 // WalkFSTree passes each file encountered while walking tree into fileDataChan
@@ -24,14 +27,17 @@ func WalkFSTree(fileDataChan chan FileData, rootPath string) {
 		func(path string, info os.FileInfo, err error) error {
 			if !info.IsDir() {
 				fileDataChan <- FileData{
-					FileInfo: info,
-					Path:     path,
+					ModTime: info.ModTime(),
+					Mode:    info.Mode(),
+					Path:    path,
+					Size:    info.Size(),
 				}
 			}
 			return nil // Never stop
 		})
 }
 
+// HashFile hashes a file with SHA1 and returns the hash as a byte slice
 func HashFile(path string) ([]byte, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -47,6 +53,7 @@ func HashFile(path string) ([]byte, error) {
 	return hasher.Sum(nil), nil
 }
 
+// HashFileHex hashes a file with SHA1 and returns the hash as a hex string
 func HashFileHex(path string) (string, error) {
 	h, err := HashFile(path)
 	if err != nil {
@@ -55,6 +62,8 @@ func HashFileHex(path string) (string, error) {
 	return hex.EncodeToString(h), nil
 }
 
+// ComputeHashes loops over file data from input,
+// hashes each, and passes it down the output channel
 func ComputeHashes(output chan FileData, input chan FileData) {
 	for f := range input {
 		h, err := HashFileHex(f.Path)

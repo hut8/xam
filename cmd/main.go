@@ -9,10 +9,12 @@ import (
 	"strconv"
 
 	"github.com/bradfitz/iter"
+	"github.com/codegangsta/cli"
+	"github.com/gocarina/gocsv"
 	"github.com/hut8/xam"
 )
 
-func writeCSV(fileData chan xam.FileData, csvFile io.Writer) {
+func writeCSV(fileData chan xam.FileData, csvFile io.Writer) error {
 	w := csv.NewWriter(csvFile)
 	w.Write([]string{
 		"path", "modified", "size", "mode", "sha1", "error",
@@ -25,16 +27,26 @@ func writeCSV(fileData chan xam.FileData, csvFile io.Writer) {
 		}
 		w.Write([]string{
 			d.Path,
-			d.ModTime().String(),
-			strconv.FormatInt(d.Size(), 10),
-			d.Mode().String(),
+			d.ModTime.String(),
+			strconv.FormatInt(d.Size, 10),
+			d.Mode.String(),
 			d.SHA1,
 			errorStr,
 		})
 	}
+	return nil
 }
 
-func main() {
+func readCSV(csvFile *os.File) ([]*xam.FileData, error) {
+	fileData := []*xam.FileData{}
+	err := gocsv.UnmarshalFile(csvFile, fileData)
+	if err != nil {
+		return nil, err
+	}
+	return fileData, nil
+}
+
+func buildIndex() {
 	root := os.Getenv("TRACK_ROOT")
 	if root == "" {
 		root, _ = os.Getwd()
@@ -57,4 +69,14 @@ func main() {
 	}
 
 	xam.WalkFSTree(inputChan, root)
+}
+
+func main() {
+	app := cli.NewApp()
+	app.Name = "XAM"
+	app.Usage = "Generate file indexes"
+	app.Action = func(c *cli.Context) {
+		buildIndex()
+	}
+	app.Run(os.Args)
 }
