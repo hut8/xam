@@ -9,7 +9,36 @@ import (
 	"time"
 )
 
+// FileDB provides an in-memory database for querying duplicate
+// files by size and SHA1
+type FileDB struct {
+	db FileDataSlice
+}
+
+// NewFileDB constructs a new FileDB instance
+// given a slice of FileData instances
+func NewFileDB(fd []*FileData) *FileDB {
+	return &FileDB{
+		db: FileDataSlice(fd),
+	}
+}
+
+// FindBySize returns all files in FileDB with matching size
+func (db *FileDB) FindBySize(size int64) []*FileData {
+	return db.db.Where(func(fd *FileData) bool {
+		return fd.Size == size
+	})
+}
+
+// FindBySHA1 returns all files in FileDB with matching SHA1
+func (db *FileDB) FindBySHA1(sha1 string) []*FileData {
+	return db.db.Where(func(fd *FileData) bool {
+		return fd.SHA1 == sha1
+	})
+}
+
 // FileData represents attributes of file
+// +gen * slice:"Where"
 type FileData struct {
 	Path    string      `csv:"path"`
 	Err     error       `csv:"err"`
