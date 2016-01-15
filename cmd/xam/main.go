@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"strconv"
 
+	log "github.com/Sirupsen/logrus"
 	"github.com/bradfitz/iter"
 	"github.com/codegangsta/cli"
 	"github.com/gocarina/gocsv"
@@ -37,28 +38,30 @@ func writeCSV(fileData chan xam.FileData, csvFile io.Writer) error {
 	return nil
 }
 
-func readCSV(csvFile *os.File) ([]*xam.FileData, error) {
+func readCSV(csvPath string) ([]*xam.FileData, error) {
+	csvFile, err := os.Open(csvPath)
+	if err != nil {
+		return nil, err
+	}
 	fileData := []*xam.FileData{}
-	err := gocsv.UnmarshalFile(csvFile, fileData)
+	err = gocsv.UnmarshalFile(csvFile, fileData)
 	if err != nil {
 		return nil, err
 	}
 	return fileData, nil
 }
 
-func buildIndex() {
-	root := os.Getenv("TRACK_ROOT")
-	if root == "" {
-		root, _ = os.Getwd()
-	}
-	root, _ = filepath.Abs(root)
+func makeCSVPath(root string) string {
+	return filepath.Join(root, "xam.csv")
+}
+
+func buildIndex(root string) error {
 	inputChan := make(chan xam.FileData)
 	outputChan := make(chan xam.FileData)
 
-	csvFile, err := os.Create(
-		filepath.Join(root, "xam.csv"))
+	csvFile, err := os.Create(makeCSVPath(root))
 	if err != nil {
-		panic(err)
+		return err
 	}
 	defer csvFile.Close()
 
@@ -69,6 +72,8 @@ func buildIndex() {
 	}
 
 	xam.WalkFSTree(inputChan, root)
+
+	return nil
 }
 
 func main() {
@@ -76,7 +81,23 @@ func main() {
 	app.Name = "XAM"
 	app.Usage = "Generate file indexes"
 	app.Action = func(c *cli.Context) {
-		buildIndex()
+		root := os.Getenv("TRACK_ROOT")
+		if root == "" {
+			root, _ = os.Getwd()
+		}
+		root, _ = filepath.Abs(root)
+
+		// Read existing CSV if any
+		fileData, err := readCSV(
+			makeCSVPath(root))
+		if err != nil {
+			log.Warnf("could not read existing database from: %s",
+				root)
+		}
+		err = buildIndex(root)
+		if err != nil {
+			panic(err)
+		}
 	}
 	app.Run(os.Args)
 }
