@@ -3,6 +3,7 @@ package xam
 import (
 	"crypto/sha1"
 	"encoding/hex"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -37,6 +38,16 @@ func (db *FileDB) FindBySHA1(sha1 string) []*FileData {
 	})
 }
 
+// Add adds a new FileData object to the database if not already present
+func (db *FileDB) Add(fd *FileData) {
+	if len(db.db.Where(func(existingFD *FileData) bool {
+		return existingFD == fd
+	})) > 0 {
+		return
+	}
+	db.db = append(db.db, fd)
+}
+
 // FileData represents attributes of file
 // +gen * slice:"Where"
 type FileData struct {
@@ -51,9 +62,11 @@ type FileData struct {
 // WalkFSTree passes each file encountered while walking tree into fileDataChan
 // rootPath should be an absolute path
 func WalkFSTree(fileDataChan chan FileData, rootPath string) {
+	fmt.Printf("root: %s\n", rootPath)
 	filepath.Walk(
 		rootPath,
 		func(path string, info os.FileInfo, err error) error {
+			fmt.Printf("found: %s\n", path)
 			if !info.IsDir() {
 				fileDataChan <- FileData{
 					ModTime: info.ModTime(),
@@ -91,13 +104,27 @@ func HashFileHex(path string) (string, error) {
 	return hex.EncodeToString(h), nil
 }
 
+// HashCacheFunc allows hashes to be cached in a file.
+// The function should return "" if it's unsure of the hash given the
+// information in the FileData instance. The instance passed in will never
+// have the SHA1 set to a non-zero value.
+type HashCacheFunc func(*FileData) string
+
 // ComputeHashes loops over file data from input,
 // hashes each, and passes it down the output channel
-func ComputeHashes(output chan FileData, input chan FileData) {
+func ComputeHashes(output chan FileData,
+	input chan FileData,
+	hc HashCacheFunc) {
 	for f := range input {
-		h, err := HashFileHex(f.Path)
-		f.SHA1 = h
-		f.Err = err
+		cached := hc(&f)
+		if cached == "" {
+			h, err := HashFileHex(f.Path)
+			f.SHA1 = h
+			f.Err = err
+		} else {
+			f.SHA1 = cached
+			f.Err = nil
+		}
 		output <- f
 	}
 }

@@ -8,14 +8,18 @@ import (
 	"runtime"
 	"strconv"
 
+	"sync"
+
 	log "github.com/Sirupsen/logrus"
 	"github.com/bradfitz/iter"
 	"github.com/codegangsta/cli"
-	"github.com/gocarina/gocsv"
+	"github.com/hut8/gocsv"
 	"github.com/hut8/xam"
 )
 
-func writeCSV(fileData chan xam.FileData, csvFile io.Writer) error {
+func writeCSV(fileData chan xam.FileData,
+	csvFile io.Writer,
+	doneChan chan struct{}) {
 	w := csv.NewWriter(csvFile)
 	w.Write([]string{
 		"path", "modified", "size", "mode", "sha1", "error",
@@ -35,7 +39,8 @@ func writeCSV(fileData chan xam.FileData, csvFile io.Writer) error {
 			errorStr,
 		})
 	}
-	return nil
+	w.Flush()
+	doneChan <- struct{}{}
 }
 
 func readCSV(csvPath string) ([]*xam.FileData, error) {
@@ -55,9 +60,16 @@ func makeCSVPath(root string) string {
 	return filepath.Join(root, "xam.csv")
 }
 
-func buildIndex(root string) error {
+func makeHashCache(db *xam.FileDB) func(*xam.FileData) string {
+	return func(fd *xam.FileData) string {
+		return ""
+	}
+}
+
+func buildIndex(root string, hashCacheFunc xam.HashCacheFunc) error {
 	inputChan := make(chan xam.FileData)
 	outputChan := make(chan xam.FileData)
+	writeDoneChan := make(chan struct{})
 
 	csvFile, err := os.Create(makeCSVPath(root))
 	if err != nil {
@@ -65,13 +77,27 @@ func buildIndex(root string) error {
 	}
 	defer csvFile.Close()
 
-	go writeCSV(outputChan, csvFile)
+	go writeCSV(outputChan, csvFile, writeDoneChan)
 
+	wg := &sync.WaitGroup{}
 	for _ = range iter.N(runtime.NumCPU()) {
-		go xam.ComputeHashes(outputChan, inputChan)
+		wg.Add(1)
+		go func() {
+			xam.ComputeHashes(
+				outputChan,
+				inputChan,
+				hashCacheFunc)
+			wg.Done()
+		}()
 	}
 
 	xam.WalkFSTree(inputChan, root)
+
+	close(inputChan) // notify hashers
+	wg.Wait()
+
+	close(outputChan) // notify csvwriter
+	<-writeDoneChan
 
 	return nil
 }
@@ -88,13 +114,14 @@ func main() {
 		root, _ = filepath.Abs(root)
 
 		// Read existing CSV if any
-		fileData, err := readCSV(
-			makeCSVPath(root))
+		fileData, err := readCSV(makeCSVPath(root))
 		if err != nil {
 			log.Warnf("could not read existing database from: %s",
 				root)
 		}
-		err = buildIndex(root)
+		fileDB := xam.NewFileDB(fileData)
+		err = buildIndex(root,
+			makeHashCache(fileDB))
 		if err != nil {
 			panic(err)
 		}
