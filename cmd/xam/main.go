@@ -49,7 +49,7 @@ func readCSV(csvPath string) ([]*xam.FileData, error) {
 		return nil, err
 	}
 	fileData := []*xam.FileData{}
-	err = gocsv.UnmarshalFile(csvFile, fileData)
+	err = gocsv.UnmarshalFile(csvFile, &fileData)
 	if err != nil {
 		return nil, err
 	}
@@ -116,7 +116,8 @@ func main() {
 		// Read existing CSV if any
 		fileData, err := readCSV(makeCSVPath(root))
 		if err != nil {
-			log.Warnf("could not read existing database from: %s",
+			log.WithError(err).Warnf(
+				"could not read existing database from: %s",
 				root)
 		}
 		fileDB := xam.NewFileDB(fileData)
