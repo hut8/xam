@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 )
 
@@ -54,9 +55,29 @@ type FileData struct {
 	Path    string      `csv:"path"`
 	Err     error       `csv:"err"`
 	Size    int64       `csv:"size"`
-	Mode    os.FileMode `csv:"mode"`
+	Mode    os.FileMode `csv:"-"`
 	SHA1    string      `csv:"sha1"`
-	ModTime time.Time   `csv:"modified"`
+	ModTime Time        `csv:"modified"`
+}
+
+type Time struct {
+	time.Time
+}
+
+// MarshalCSV is used by github.com/gocarina/gocsv
+func (t *Time) MarshalCSV() (string, error) {
+	return strconv.FormatInt(
+		t.UTC().Unix(), 10), nil
+}
+
+// UnmarshalCSV is used by github.com/gocarina/gocsv
+func (t *Time) UnmarshalCSV(csv string) (err error) {
+	u, err := strconv.ParseInt(csv, 10, 64)
+	if err != nil {
+		return err
+	}
+	t.Time = time.Unix(u, 0)
+	return nil
 }
 
 // WalkFSTree passes each file encountered while walking tree into fileDataChan
@@ -69,7 +90,7 @@ func WalkFSTree(fileDataChan chan FileData, rootPath string) {
 			fmt.Printf("found: %s\n", path)
 			if !info.IsDir() {
 				fileDataChan <- FileData{
-					ModTime: info.ModTime(),
+					ModTime: Time{info.ModTime()},
 					Mode:    info.Mode(),
 					Path:    path,
 					Size:    info.Size(),

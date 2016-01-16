@@ -32,7 +32,7 @@ func writeCSV(fileData chan xam.FileData,
 		}
 		w.Write([]string{
 			d.Path,
-			d.ModTime.String(),
+			strconv.FormatInt(d.ModTime.Time.UTC().Unix(), 10),
 			strconv.FormatInt(d.Size, 10),
 			d.Mode.String(),
 			d.SHA1,
