@@ -2,14 +2,58 @@ package xam
 
 import (
 	"crypto/sha1"
+	"encoding/csv"
 	"encoding/hex"
-	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strconv"
 	"time"
+
+	"github.com/hut8/gocsv"
 )
+
+// WriteCSV serializeds xam.FileData instances to be read by ReadCSV
+func WriteCSV(
+	fileData chan FileData,
+	csvFile io.Writer,
+	doneChan chan struct{}) {
+	w := csv.NewWriter(csvFile)
+	w.Write([]string{
+		"path", "modified", "size", "mode", "sha1", "error",
+	})
+
+	for d := range fileData {
+		errorStr := ""
+		if d.Err != nil {
+			errorStr = d.Err.Error()
+		}
+		w.Write([]string{
+			d.Path,
+			strconv.FormatInt(d.ModTime.Time.UTC().Unix(), 10),
+			strconv.FormatInt(d.Size, 10),
+			d.Mode.String(),
+			d.SHA1,
+			errorStr,
+		})
+	}
+	w.Flush()
+	doneChan <- struct{}{}
+}
+
+// ReadCSV returns entries serialized by WriteCSV
+func ReadCSV(csvPath string) ([]*FileData, error) {
+	csvFile, err := os.Open(csvPath)
+	if err != nil {
+		return nil, err
+	}
+	fileData := []*FileData{}
+	err = gocsv.UnmarshalFile(csvFile, &fileData)
+	if err != nil {
+		return nil, err
+	}
+	return fileData, nil
+}
 
 // FileDB provides an in-memory database for querying duplicate
 // files by size and SHA1
@@ -83,11 +127,9 @@ func (t *Time) UnmarshalCSV(csv string) (err error) {
 // WalkFSTree passes each file encountered while walking tree into fileDataChan
 // rootPath should be an absolute path
 func WalkFSTree(fileDataChan chan FileData, rootPath string) {
-	fmt.Printf("root: %s\n", rootPath)
 	filepath.Walk(
 		rootPath,
 		func(path string, info os.FileInfo, err error) error {
-			fmt.Printf("found: %s\n", path)
 			if !info.IsDir() {
 				fileDataChan <- FileData{
 					ModTime: Time{info.ModTime()},

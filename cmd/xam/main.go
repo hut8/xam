@@ -1,68 +1,32 @@
 package main
 
 import (
-	"encoding/csv"
-	"io"
 	"os"
 	"path/filepath"
 	"runtime"
-	"strconv"
 
 	"sync"
 
 	log "github.com/Sirupsen/logrus"
 	"github.com/bradfitz/iter"
 	"github.com/codegangsta/cli"
-	"github.com/hut8/gocsv"
 	"github.com/hut8/xam"
 )
-
-func writeCSV(fileData chan xam.FileData,
-	csvFile io.Writer,
-	doneChan chan struct{}) {
-	w := csv.NewWriter(csvFile)
-	w.Write([]string{
-		"path", "modified", "size", "mode", "sha1", "error",
-	})
-
-	for d := range fileData {
-		errorStr := ""
-		if d.Err != nil {
-			errorStr = d.Err.Error()
-		}
-		w.Write([]string{
-			d.Path,
-			strconv.FormatInt(d.ModTime.Time.UTC().Unix(), 10),
-			strconv.FormatInt(d.Size, 10),
-			d.Mode.String(),
-			d.SHA1,
-			errorStr,
-		})
-	}
-	w.Flush()
-	doneChan <- struct{}{}
-}
-
-func readCSV(csvPath string) ([]*xam.FileData, error) {
-	csvFile, err := os.Open(csvPath)
-	if err != nil {
-		return nil, err
-	}
-	fileData := []*xam.FileData{}
-	err = gocsv.UnmarshalFile(csvFile, &fileData)
-	if err != nil {
-		return nil, err
-	}
-	return fileData, nil
-}
 
 func makeCSVPath(root string) string {
 	return filepath.Join(root, "xam.csv")
 }
 
+// This is obviously dysfunctional but works for me!
 func makeHashCache(db *xam.FileDB) func(*xam.FileData) string {
 	return func(fd *xam.FileData) string {
-		return ""
+		matches := xam.FileDataSlice(db.FindBySize(fd.Size))
+		if len(matches) == 0 {
+			return ""
+		}
+		log.Debugf("using cached value for: %s",
+			fd.Path)
+		return matches[0].SHA1
 	}
 }
 
@@ -77,7 +41,7 @@ func buildIndex(root string, hashCacheFunc xam.HashCacheFunc) error {
 	}
 	defer csvFile.Close()
 
-	go writeCSV(outputChan, csvFile, writeDoneChan)
+	go xam.WriteCSV(outputChan, csvFile, writeDoneChan)
 
 	wg := &sync.WaitGroup{}
 	for _ = range iter.N(runtime.NumCPU()) {
@@ -114,7 +78,7 @@ func main() {
 		root, _ = filepath.Abs(root)
 
 		// Read existing CSV if any
-		fileData, err := readCSV(makeCSVPath(root))
+		fileData, err := xam.ReadCSV(makeCSVPath(root))
 		if err != nil {
 			log.WithError(err).Warnf(
 				"could not read existing database from: %s",
