@@ -44,7 +44,7 @@ func buildIndex(root string, hashCacheFunc xam.HashCacheFunc) error {
 	go xam.WriteCSV(outputChan, csvFile, writeDoneChan)
 
 	wg := &sync.WaitGroup{}
-	for _ = range iter.N(runtime.NumCPU()) {
+a	for _ = range iter.N(runtime.NumCPU()) {
 		wg.Add(1)
 		go func() {
 			xam.ComputeHashes(
