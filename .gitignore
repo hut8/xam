@@ -22,3 +22,8 @@ _testmain.go
 *.exe
 *.test
 *.prof
+
+# gb and gb-vendor
+bin
+pkg
+vendor/src
