@@ -7,6 +7,8 @@ import (
 
 	"sync"
 
+	"io/ioutil"
+
 	log "github.com/Sirupsen/logrus"
 	"github.com/bradfitz/iter"
 	"github.com/codegangsta/cli"
@@ -30,14 +32,14 @@ func makeHashCache(db *xam.FileDB) func(*xam.FileData) string {
 	}
 }
 
-func buildIndex(root string, hashCacheFunc xam.HashCacheFunc) error {
+func buildIndex(root string, hashCacheFunc xam.HashCacheFunc) (string, error) {
 	inputChan := make(chan xam.FileData)
 	outputChan := make(chan xam.FileData)
 	writeDoneChan := make(chan struct{})
 
-	csvFile, err := os.Create(makeCSVPath(root))
+	csvFile, err := ioutil.TempFile("", "xam")
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer csvFile.Close()
 
@@ -63,33 +65,50 @@ func buildIndex(root string, hashCacheFunc xam.HashCacheFunc) error {
 	close(outputChan) // notify csvwriter
 	<-writeDoneChan
 
-	return nil
+	return csvFile.Name(), nil
+}
+
+func mainAction(c *cli.Context) {
+	root := os.Getenv("TRACK_ROOT")
+	if root == "" {
+		root, _ = os.Getwd()
+	}
+	root, _ = filepath.Abs(root)
+	csvPath := makeCSVPath(root)
+
+	// Read existing CSV if any
+	fileData, err := xam.ReadCSV(csvPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			log.Debugf(
+				"existing database not found for %s",
+				root)
+		} else {
+			log.WithError(err).Errorf(
+				"could not read existing database from: %s",
+				root)
+		}
+	}
+
+	// Build current database
+	fileDB := xam.NewFileDB(fileData)
+	tmpCsvPath, err := buildIndex(root,
+		makeHashCache(fileDB))
+	if err != nil {
+		panic(err)
+	}
+
+	// Atomically(?) move
+	err = os.Rename(tmpCsvPath, csvPath)
+	if err != nil {
+		panic(err)
+	}
 }
 
 func main() {
 	app := cli.NewApp()
 	app.Name = "XAM"
 	app.Usage = "Generate file indexes"
-	app.Action = func(c *cli.Context) {
-		root := os.Getenv("TRACK_ROOT")
-		if root == "" {
-			root, _ = os.Getwd()
-		}
-		root, _ = filepath.Abs(root)
-
-		// Read existing CSV if any
-		fileData, err := xam.ReadCSV(makeCSVPath(root))
-		if err != nil {
-			log.WithError(err).Warnf(
-				"could not read existing database from: %s",
-				root)
-		}
-		fileDB := xam.NewFileDB(fileData)
-		err = buildIndex(root,
-			makeHashCache(fileDB))
-		if err != nil {
-			panic(err)
-		}
-	}
+	app.Action = mainAction
 	app.Run(os.Args)
 }
