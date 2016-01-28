@@ -124,19 +124,26 @@ func (t *Time) UnmarshalCSV(csv string) (err error) {
 	return nil
 }
 
+// fileInfoFilter returns true if it should be skipped
+func fileInfoFilter(fi os.FileInfo) bool {
+	return (fi == nil || fi.IsDir() || fi.Size() == 0)
+}
+
 // WalkFSTree passes each file encountered while walking tree into fileDataChan
 // rootPath should be an absolute path
 func WalkFSTree(fileDataChan chan FileData, rootPath string) {
 	filepath.Walk(
 		rootPath,
 		func(path string, info os.FileInfo, err error) error {
-			if !info.IsDir() {
-				fileDataChan <- FileData{
-					ModTime: Time{info.ModTime()},
-					Mode:    info.Mode(),
-					Path:    path,
-					Size:    info.Size(),
-				}
+			if fileInfoFilter(info) {
+				return nil
+			}
+			fileDataChan <- FileData{
+				ModTime: Time{info.ModTime()},
+				Mode:    info.Mode(),
+				Path:    path,
+				Size:    info.Size(),
+				Err:     err,
 			}
 			return nil // Never stop
 		})
