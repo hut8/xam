@@ -3,10 +3,22 @@
 * Introduction
 XAM is a filesystem metadatabase. It allows you to query a set of files for their metadata, such as asking which files are a specific size or which match a given hash.
 
-* Installation
-If you would like to install it from source, make sure you have a working Go installation, then:
+As a command line utility, it generates a xam.csv file, which is sort of like md5deep.
 
+* Dependencies
+** Runtime
+None!
+** Development
+[[https://golang.org/dl/][go]]
+[[https://github.com/constabulary/gb][gb]]
+* Installation
+** Source
 #+begin_src bash
-go get github.com/hut8/xam
-go install github.com/hut8/xam
+# assumes a working Go installation
+go get github.com/constabulary/gb/...
+git clone github.com/hut8/xam
+cd xam
+gb vendor restore
+gb build
+mv bin/xam $WHEREVER_IN_PATH
 #+end_src
