@@ -111,7 +111,6 @@ func mainAction(c *cli.Context) error {
 }
 
 func main() {
-	log.SetLevel(log.DebugLevel)
 	app := cli.NewApp()
 	app.Name = "XAM"
 	app.Usage = "Generate file indexes"
