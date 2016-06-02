@@ -37,11 +37,12 @@ func buildIndex(root string, hashCacheFunc xam.HashCacheFunc) (string, error) {
 	outputChan := make(chan xam.FileData)
 	writeDoneChan := make(chan struct{})
 
-	csvFile, err := ioutil.TempFile("", "xam")
+	csvFile, err := ioutil.TempFile(root, ".xam")
 	if err != nil {
 		return "", err
 	}
 	defer csvFile.Close()
+	log.Debugf("using temp csv: %v", csvFile.Name())
 
 	go xam.WriteCSV(outputChan, csvFile, writeDoneChan)
 
@@ -68,13 +69,14 @@ func buildIndex(root string, hashCacheFunc xam.HashCacheFunc) (string, error) {
 	return csvFile.Name(), nil
 }
 
-func mainAction(c *cli.Context) {
+func mainAction(c *cli.Context) error {
 	root := os.Getenv("TRACK_ROOT")
 	if root == "" {
 		root, _ = os.Getwd()
 	}
 	root, _ = filepath.Abs(root)
 	csvPath := makeCSVPath(root)
+	log.Debugf("using csv path: %v", csvPath)
 
 	// Read existing CSV if any
 	fileData, err := xam.ReadCSV(csvPath)
@@ -95,17 +97,21 @@ func mainAction(c *cli.Context) {
 	tmpCsvPath, err := buildIndex(root,
 		makeHashCache(fileDB))
 	if err != nil {
-		panic(err)
+		log.WithError(err).Error("could not build db")
+		return err
 	}
 
 	// Atomically(?) move
+	log.Debugf("moving %v -> %v", tmpCsvPath, csvPath)
 	err = os.Rename(tmpCsvPath, csvPath)
 	if err != nil {
-		panic(err)
+		log.WithError(err).Error("could not move")
 	}
+	return err
 }
 
 func main() {
+	log.SetLevel(log.DebugLevel)
 	app := cli.NewApp()
 	app.Name = "XAM"
 	app.Usage = "Generate file indexes"
