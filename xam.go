@@ -183,18 +183,11 @@ type HashCacheFunc func(*FileData) string
 // ComputeHashes loops over file data from input,
 // hashes each, and passes it down the output channel
 func ComputeHashes(output chan FileData,
-	input chan FileData,
-	hc HashCacheFunc) {
+	input chan FileData) {
 	for f := range input {
-		cached := hc(&f)
-		if cached == "" {
-			h, err := HashFileHex(f.Path)
-			f.SHA1 = h
-			f.Err = err
-		} else {
-			f.SHA1 = cached
-			f.Err = nil
-		}
+		h, err := HashFileHex(f.Path)
+		f.SHA1 = h
+		f.Err = err
 		output <- f
 	}
 }

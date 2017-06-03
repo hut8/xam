@@ -19,20 +19,43 @@ func makeCSVPath(root string) string {
 	return filepath.Join(root, "xam.csv")
 }
 
-// This is obviously dysfunctional but works for me!
-func makeHashCache(db *xam.FileDB) func(*xam.FileData) string {
-	return func(fd *xam.FileData) string {
-		matches := xam.FileDataSlice(db.FindBySize(fd.Size))
-		if len(matches) == 0 {
-			return ""
-		}
-		log.Debugf("using cached value for: %s",
-			fd.Path)
-		return matches[0].SHA1
+func buildFileSetIndex(root string) (string, error) {
+	// inputChan receives files via WalkFSTree
+	inputChan := make(chan xam.FileData)
+	// reading from outputChan will give you the same as inputChan but with hashes
+	outputChan := make(chan xam.FileData)
+
+	index := xam.NewIndex()
+	go index.FromFileData(outputChan)
+
+	wg := &sync.WaitGroup{}
+	for _ = range iter.N(runtime.NumCPU()) {
+		wg.Add(1)
+		go func() {
+			xam.ComputeHashes(outputChan, inputChan)
+			wg.Done()
+		}()
 	}
+
+	xam.WalkFSTree(inputChan, root)
+
+	close(inputChan) // notify hashers
+	wg.Wait()
+
+	close(outputChan) // notify index
+
+	setSink, err := ioutil.TempFile(root, ".xam")
+	if err != nil {
+		return "", err
+	}
+	defer setSink.Close()
+	log.Debugf("using temp file: %v", setSink.Name())
+	index.Write(setSink)
+
+	return setSink.Name(), nil
 }
 
-func buildIndex(root string, hashCacheFunc xam.HashCacheFunc) (string, error) {
+func buildIndex(root string) (string, error) {
 	inputChan := make(chan xam.FileData)
 	outputChan := make(chan xam.FileData)
 	writeDoneChan := make(chan struct{})
@@ -52,8 +75,7 @@ func buildIndex(root string, hashCacheFunc xam.HashCacheFunc) (string, error) {
 		go func() {
 			xam.ComputeHashes(
 				outputChan,
-				inputChan,
-				hashCacheFunc)
+				inputChan)
 			wg.Done()
 		}()
 	}
@@ -78,24 +100,7 @@ func mainAction(c *cli.Context) error {
 	csvPath := makeCSVPath(root)
 	log.Debugf("using csv path: %v", csvPath)
 
-	// Read existing CSV if any
-	fileData, err := xam.ReadCSV(csvPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			log.Debugf(
-				"existing database not found for %s",
-				root)
-		} else {
-			log.WithError(err).Errorf(
-				"could not read existing database from: %s",
-				root)
-		}
-	}
-
-	// Build current database
-	fileDB := xam.NewFileDB(fileData)
-	tmpCsvPath, err := buildIndex(root,
-		makeHashCache(fileDB))
+	tmpCsvPath, err := buildIndex(root)
 	if err != nil {
 		log.WithError(err).Error("could not build db")
 		return err
@@ -111,9 +116,21 @@ func mainAction(c *cli.Context) error {
 }
 
 func main() {
+	log.SetLevel(log.DebugLevel)
 	app := cli.NewApp()
 	app.Name = "XAM"
 	app.Usage = "Generate file indexes"
 	app.Action = mainAction
+	app.Commands = []cli.Command{
+		cli.Command{
+			Name: "index",
+			Action: func(c *cli.Context) error {
+				log.Info("generating index")
+				root, _ := filepath.Abs(".")
+				buildFileSetIndex(root)
+				return nil
+			},
+		},
+	}
 	app.Run(os.Args)
 }
