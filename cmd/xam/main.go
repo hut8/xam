@@ -125,9 +125,19 @@ func main() {
 		cli.Command{
 			Name: "index",
 			Action: func(c *cli.Context) error {
-				log.Info("generating index")
 				root, _ := filepath.Abs(".")
-				buildFileSetIndex(root)
+				indexPath := filepath.Join(root, "xam.ix")
+				log.Infof("generating index to %v", indexPath)
+				tmpPath, err := buildFileSetIndex(root)
+				if err != nil {
+					log.WithError(err).Error("could not build index")
+					return err
+				}
+				err = os.Rename(tmpPath, indexPath)
+				if err != nil {
+					log.WithError(err).Error("could not move temp index to final destination")
+					return err
+				}
 				return nil
 			},
 		},
