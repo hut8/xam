@@ -24,18 +24,20 @@ func NewIndexEntry(fd FileData) IndexEntry {
 }
 
 func (e *IndexEntry) String() string {
-	return e.Hash + "-" + strconv.FormatInt(e.Size, 10)
+	return e.Hash + "\t" + strconv.FormatInt(e.Size, 10)
 }
 
 type Index struct {
 	Set     IndexEntrySet
 	sizeSet map[int64]struct{}
+	hashSet map[string]struct{}
 }
 
 func NewIndex() *Index {
 	return &Index{
 		Set:     NewIndexEntrySet(),
 		sizeSet: make(map[int64]struct{}),
+		hashSet: make(map[string]struct{}),
 	}
 }
 
@@ -44,11 +46,17 @@ func (i *Index) HasSize(sz int64) bool {
 	return ok
 }
 
+func (i *Index) HasHash(hash string) bool {
+	_, ok := i.hashSet[hash]
+	return ok
+}
+
 func (i *Index) FromFileData(source chan FileData) {
 	for fd := range source {
 		entry := NewIndexEntry(fd)
 		i.Set.Add(entry)
 		i.sizeSet[entry.Size] = struct{}{}
+		i.hashSet[entry.Hash] = struct{}{}
 	}
 }
 
@@ -56,6 +64,7 @@ func (i *Index) LoadEntries(source chan IndexEntry) {
 	for entry := range source {
 		i.Set.Add(entry)
 		i.sizeSet[entry.Size] = struct{}{}
+		i.hashSet[entry.Hash] = struct{}{}
 	}
 }
 
@@ -69,7 +78,7 @@ func (i *Index) LoadFromFile(path string) error {
 	// create a new scanner and read the file line by line
 	scanner := bufio.NewScanner(source)
 	for scanner.Scan() {
-		parts := strings.Split(scanner.Text(), "-")
+		parts := strings.Split(scanner.Text(), "\t")
 		if len(parts) != 2 {
 			return fmt.Errorf("got malformed line: %+v", parts)
 		}
@@ -83,6 +92,7 @@ func (i *Index) LoadFromFile(path string) error {
 		}
 		i.Set.Add(ent)
 		i.sizeSet[ent.Size] = struct{}{}
+		i.hashSet[ent.Hash] = struct{}{}
 	}
 	return nil
 }
