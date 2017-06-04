@@ -24,7 +24,7 @@ func NewIndexEntry(fd FileData) IndexEntry {
 }
 
 func (e *IndexEntry) String() string {
-	return e.Hash + "\t" + strconv.FormatInt(e.Size, 10)
+	return e.Hash + ":" + strconv.FormatInt(e.Size, 10)
 }
 
 type Index struct {
@@ -78,7 +78,7 @@ func (i *Index) LoadFromFile(path string) error {
 	// create a new scanner and read the file line by line
 	scanner := bufio.NewScanner(source)
 	for scanner.Scan() {
-		parts := strings.Split(scanner.Text(), "\t")
+		parts := strings.Split(scanner.Text(), ":")
 		if len(parts) != 2 {
 			return fmt.Errorf("got malformed line: %+v", parts)
 		}
