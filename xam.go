@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/Sirupsen/logrus"
+	humanize "github.com/dustin/go-humanize"
 	"github.com/hut8/gocsv"
 )
 
@@ -132,6 +134,9 @@ func fileInfoFilter(fi os.FileInfo) bool {
 // WalkFSTree passes each file encountered while walking tree into fileDataChan
 // rootPath should be an absolute path
 func WalkFSTree(fileDataChan chan FileData, rootPath string) {
+	count := int64(0)
+	size := int64(0)
+
 	filepath.Walk(
 		rootPath,
 		func(path string, info os.FileInfo, err error) error {
@@ -145,8 +150,18 @@ func WalkFSTree(fileDataChan chan FileData, rootPath string) {
 				Size:    info.Size(),
 				Err:     err,
 			}
+			count++
+			size += info.Size()
+			if count%1000 == 0 {
+				logrus.Debugf("progress: hashed %v files\t%v",
+					humanize.Comma(count),
+					humanize.Bytes(uint64(size)))
+			}
 			return nil // Never stop
 		})
+	logrus.Debugf("hashed %v files\t%v",
+		humanize.Comma(count),
+		humanize.Bytes(uint64(size)))
 }
 
 // HashFile hashes a file with SHA1 and returns the hash as a byte slice
@@ -182,7 +197,8 @@ type HashCacheFunc func(*FileData) string
 
 // ComputeHashes loops over file data from input,
 // hashes each, and passes it down the output channel
-func ComputeHashes(output chan FileData,
+func ComputeHashes(
+	output chan FileData,
 	input chan FileData) {
 	for f := range input {
 		h, err := HashFileHex(f.Path)
