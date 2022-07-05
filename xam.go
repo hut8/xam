@@ -10,9 +10,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/Sirupsen/logrus"
 	humanize "github.com/dustin/go-humanize"
 	"github.com/hut8/gocsv"
+	"github.com/sirupsen/logrus"
 )
 
 // WriteCSV serializeds xam.FileData instances to be read by ReadCSV

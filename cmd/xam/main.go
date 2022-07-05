@@ -9,10 +9,10 @@ import (
 
 	"io/ioutil"
 
-	log "github.com/Sirupsen/logrus"
 	"github.com/bradfitz/iter"
-	"github.com/codegangsta/cli"
 	"github.com/hut8/xam"
+	log "github.com/sirupsen/logrus"
+	"github.com/urfave/cli"
 )
 
 func makeCSVPath(root string) string {
