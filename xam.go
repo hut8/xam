@@ -11,9 +11,11 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/ansel1/merry"
 	humanize "github.com/dustin/go-humanize"
 	"github.com/hut8/gocsv"
 	"github.com/sirupsen/logrus"
+	"golang.org/x/sys/unix"
 )
 
 // WriteCSV serializeds xam.FileData instances to be read by ReadCSV
@@ -177,11 +179,34 @@ func WalkFSTree(fileDataChan chan FileData, rootPath string) {
 
 // HashFile hashes a file with SHA1 and MD5 and returns the hashes as byte slices
 func HashFile(path string) ([]byte, []byte, error) {
-	f, err := os.Open(path)
-	if err != nil {
+	alarm := time.NewTimer(10 * time.Second)
+	defer alarm.Stop()
+
+	fileChan := make(chan *os.File)
+	errChan := make(chan error)
+
+	go func() {
+		f, err := os.OpenFile(path, os.O_RDONLY|unix.O_NONBLOCK, 0)
+		if err != nil {
+			errChan <- err
+			return
+		}
+		fileChan <- f
+	}()
+
+	var f *os.File
+	var err error
+
+	select {
+	case f = <-fileChan:
+		defer f.Close()
+	case err = <-errChan:
+		logrus.Warn("failed to open %v: %v", path, err)
 		return nil, nil, err
+	case <-alarm.C:
+		logrus.Error("timeout while opening %v", path)
+		return nil, nil, merry.New("timeout")
 	}
-	defer f.Close()
 
 	sha1Hasher := sha1.New()
 	md5Hasher := md5.New()
