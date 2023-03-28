@@ -1,6 +1,7 @@
 package xam
 
 import (
+	"crypto/md5"
 	"crypto/sha1"
 	"encoding/csv"
 	"encoding/hex"
@@ -19,10 +20,11 @@ import (
 func WriteCSV(
 	fileData chan FileData,
 	csvFile io.Writer,
-	doneChan chan struct{}) {
+	done chan struct{}) {
+
 	w := csv.NewWriter(csvFile)
 	w.Write([]string{
-		"path", "modified", "size", "mode", "sha1", "error",
+		"path", "modified", "size", "mode", "sha1", "md5", "error",
 	})
 
 	for d := range fileData {
@@ -36,11 +38,14 @@ func WriteCSV(
 			strconv.FormatInt(d.Size, 10),
 			d.Mode.String(),
 			d.SHA1,
+			d.MD5,
 			errorStr,
 		})
 	}
 	w.Flush()
-	doneChan <- struct{}{}
+
+	//done <- struct{}{}
+	close(done)
 }
 
 // ReadCSV returns entries serialized by WriteCSV
@@ -103,6 +108,7 @@ type FileData struct {
 	Size    int64       `csv:"size"`
 	Mode    os.FileMode `csv:"-"`
 	SHA1    string      `csv:"sha1"`
+	MD5     string      `csv:"md5"`
 	ModTime Time        `csv:"modified"`
 }
 
@@ -128,7 +134,7 @@ func (t *Time) UnmarshalCSV(csv string) (err error) {
 
 // fileInfoFilter returns true if it should be skipped
 func fileInfoFilter(fi os.FileInfo) bool {
-	return (fi == nil || fi.IsDir() || fi.Size() == 0)
+	return (fi == nil || fi.IsDir())
 }
 
 // WalkFSTree passes each file encountered while walking tree into fileDataChan
@@ -143,10 +149,14 @@ func WalkFSTree(fileDataChan chan FileData, rootPath string) {
 			if fileInfoFilter(info) {
 				return nil
 			}
+			relPath, relErr := filepath.Rel(rootPath, path)
+			if relErr != nil {
+				panic(relErr)
+			}
 			fileDataChan <- FileData{
 				ModTime: Time{info.ModTime()},
 				Mode:    info.Mode(),
-				Path:    path,
+				Path:    relPath,
 				Size:    info.Size(),
 				Err:     err,
 			}
@@ -159,34 +169,37 @@ func WalkFSTree(fileDataChan chan FileData, rootPath string) {
 			}
 			return nil // Never stop
 		})
-	logrus.Debugf("hashed %v files\t%v",
+	logrus.Debugf("crawled %v files\t%v",
 		humanize.Comma(count),
 		humanize.Bytes(uint64(size)))
+	close(fileDataChan)
 }
 
-// HashFile hashes a file with SHA1 and returns the hash as a byte slice
-func HashFile(path string) ([]byte, error) {
+// HashFile hashes a file with SHA1 and MD5 and returns the hashes as byte slices
+func HashFile(path string) ([]byte, []byte, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer f.Close()
 
-	hasher := sha1.New()
-	if _, err := io.Copy(hasher, f); err != nil {
-		return nil, err
+	sha1Hasher := sha1.New()
+	md5Hasher := md5.New()
+	sink := io.MultiWriter(sha1Hasher, md5Hasher)
+	if _, err := io.Copy(sink, f); err != nil {
+		return nil, nil, err
 	}
 
-	return hasher.Sum(nil), nil
+	return sha1Hasher.Sum(nil), md5Hasher.Sum(nil), nil
 }
 
-// HashFileHex hashes a file with SHA1 and returns the hash as a hex string
-func HashFileHex(path string) (string, error) {
-	h, err := HashFile(path)
+// HashFileHex hashes a file with SHA1 and MD5 and returns the hashes as hex strings
+func HashFileHex(path string) (string, string, error) {
+	sha1Hash, md5Hash, err := HashFile(path)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
-	return hex.EncodeToString(h), nil
+	return hex.EncodeToString(sha1Hash), hex.EncodeToString(md5Hash), nil
 }
 
 // HashCacheFunc allows hashes to be cached in a file.
@@ -198,11 +211,14 @@ type HashCacheFunc func(*FileData) string
 // ComputeHashes loops over file data from input,
 // hashes each, and passes it down the output channel
 func ComputeHashes(
+	basePath string,
 	output chan FileData,
 	input chan FileData) {
 	for f := range input {
-		h, err := HashFileHex(f.Path)
-		f.SHA1 = h
+		p := filepath.Join(basePath, f.Path)
+		hashSha1, hashMD5, err := HashFileHex(p)
+		f.SHA1 = hashSha1
+		f.MD5 = hashMD5
 		f.Err = err
 		output <- f
 	}

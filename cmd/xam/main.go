@@ -15,65 +15,29 @@ import (
 	"github.com/urfave/cli"
 )
 
-func makeCSVPath(root string) string {
-	return filepath.Join(root, "xam.csv")
-}
-
-func buildFileSetIndex(root string) (string, error) {
-	// inputChan receives files via WalkFSTree
-	inputChan := make(chan xam.FileData)
-	// reading from outputChan will give you the same as inputChan but with hashes
-	outputChan := make(chan xam.FileData)
-
-	index := xam.NewIndex()
-	go index.FromFileData(outputChan)
-
-	wg := &sync.WaitGroup{}
-	for _ = range iter.N(runtime.NumCPU()) {
-		wg.Add(1)
-		go func() {
-			xam.ComputeHashes(outputChan, inputChan)
-			wg.Done()
-		}()
-	}
-
-	xam.WalkFSTree(inputChan, root)
-
-	close(inputChan) // notify hashers
-	wg.Wait()
-
-	close(outputChan) // notify index
-
-	setSink, err := ioutil.TempFile(root, ".xam")
-	if err != nil {
-		return "", err
-	}
-	defer setSink.Close()
-	log.Debugf("using temp file: %v", setSink.Name())
-	index.Write(setSink)
-
-	return setSink.Name(), nil
-}
+var rootPath string
+var outputPath string
 
 func buildIndex(root string) (string, error) {
 	inputChan := make(chan xam.FileData)
 	outputChan := make(chan xam.FileData)
-	writeDoneChan := make(chan struct{})
 
-	csvFile, err := ioutil.TempFile(root, ".xam")
+	csvFile, err := ioutil.TempFile("", "xam-csv")
 	if err != nil {
 		return "", err
 	}
 	defer csvFile.Close()
 	log.Debugf("using temp csv: %v", csvFile.Name())
 
-	go xam.WriteCSV(outputChan, csvFile, writeDoneChan)
-
 	wg := &sync.WaitGroup{}
-	for _ = range iter.N(runtime.NumCPU()) {
+	writeDone := make(chan struct{})
+	go xam.WriteCSV(outputChan, csvFile, writeDone)
+
+	for range iter.N(runtime.NumCPU()) {
 		wg.Add(1)
 		go func() {
 			xam.ComputeHashes(
+				root,
 				outputChan,
 				inputChan)
 			wg.Done()
@@ -82,23 +46,24 @@ func buildIndex(root string) (string, error) {
 
 	xam.WalkFSTree(inputChan, root)
 
-	close(inputChan) // notify hashers
-	wg.Wait()
-
-	close(outputChan) // notify csvwriter
-	<-writeDoneChan
+	wg.Wait()         // wait on all hashers to stop
+	close(outputChan) // stop csv writer
+	<-writeDone       // wait for csv writer to complete
 
 	return csvFile.Name(), nil
 }
 
 func mainAction(c *cli.Context) error {
-	root := os.Getenv("TRACK_ROOT")
-	if root == "" {
-		root, _ = os.Getwd()
+	csvPath, err := filepath.Abs(outputPath)
+	if err != nil {
+		panic(err)
 	}
-	root, _ = filepath.Abs(root)
-	csvPath := makeCSVPath(root)
 	log.Debugf("using csv path: %v", csvPath)
+
+	root, err := filepath.Abs(rootPath)
+	if err != nil {
+		panic(err)
+	}
 
 	tmpCsvPath, err := buildIndex(root)
 	if err != nil {
@@ -117,29 +82,24 @@ func mainAction(c *cli.Context) error {
 
 func main() {
 	log.SetLevel(log.DebugLevel)
+	wd, _ := os.Getwd()
+
 	app := cli.NewApp()
 	app.Name = "XAM"
 	app.Usage = "Generate file indexes"
 	app.Action = mainAction
-	app.Commands = []cli.Command{
-		cli.Command{
-			Name: "index",
-			Action: func(c *cli.Context) error {
-				root, _ := filepath.Abs(".")
-				indexPath := filepath.Join(root, "xam.ix")
-				log.Infof("generating index to %v", indexPath)
-				tmpPath, err := buildFileSetIndex(root)
-				if err != nil {
-					log.WithError(err).Error("could not build index")
-					return err
-				}
-				err = os.Rename(tmpPath, indexPath)
-				if err != nil {
-					log.WithError(err).Error("could not move temp index to final destination")
-					return err
-				}
-				return nil
-			},
+	app.Flags = []cli.Flag{
+		cli.StringFlag{
+			Name:        "root",
+			Usage:       "Path to root of files to index",
+			Value:       wd,
+			Destination: &rootPath,
+		},
+		cli.StringFlag{
+			Name:        "out",
+			Usage:       "Path to CSV file output",
+			Destination: &outputPath,
+			Required:    true,
 		},
 	}
 	app.Run(os.Args)
