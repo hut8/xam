@@ -5,11 +5,14 @@ import (
 	"crypto/sha1"
 	"encoding/csv"
 	"encoding/hex"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/ansel1/merry"
 	humanize "github.com/dustin/go-humanize"
@@ -105,13 +108,14 @@ func (db *FileDB) Add(fd *FileData) {
 // FileData represents attributes of file
 // +gen * slice:"Where"
 type FileData struct {
-	Path    string      `csv:"path"`
-	Err     error       `csv:"err"`
-	Size    int64       `csv:"size"`
-	Mode    os.FileMode `csv:"-"`
-	SHA1    string      `csv:"sha1"`
-	MD5     string      `csv:"md5"`
-	ModTime Time        `csv:"modified"`
+	Path       string      `csv:"path"` // valid UTF-8 for output
+	PathNative string      `csv:"-"`    // original path to hash invalid UTF-8 paths
+	Err        error       `csv:"err"`
+	Size       int64       `csv:"size"`
+	Mode       os.FileMode `csv:"-"`
+	SHA1       string      `csv:"sha1"`
+	MD5        string      `csv:"md5"`
+	ModTime    Time        `csv:"modified"`
 }
 
 type Time struct {
@@ -155,12 +159,21 @@ func WalkFSTree(fileDataChan chan FileData, rootPath string) {
 			if relErr != nil {
 				panic(relErr)
 			}
+			nativePath := relPath
+			if !utf8.ValidString(nativePath) {
+				logrus.Errorf(`invalid string in path: "%v" bytes: %v`,
+					path, hex.EncodeToString([]byte(nativePath)))
+				err = fmt.Errorf(`invalid string in path: "%v" bytes: %v`,
+					nativePath, hex.EncodeToString([]byte(nativePath)))
+				relPath = strings.ToValidUTF8(relPath, "�")
+			}
 			fileDataChan <- FileData{
-				ModTime: Time{info.ModTime()},
-				Mode:    info.Mode(),
-				Path:    relPath,
-				Size:    info.Size(),
-				Err:     err,
+				ModTime:    Time{info.ModTime()},
+				Mode:       info.Mode(),
+				PathNative: nativePath,
+				Path:       relPath,
+				Size:       info.Size(),
+				Err:        err,
 			}
 			count++
 			size += info.Size()
@@ -240,7 +253,7 @@ func ComputeHashes(
 	output chan FileData,
 	input chan FileData) {
 	for f := range input {
-		p := filepath.Join(basePath, f.Path)
+		p := filepath.Join(basePath, f.PathNative)
 		hashSha1, hashMD5, err := HashFileHex(p)
 		f.SHA1 = hashSha1
 		f.MD5 = hashMD5
