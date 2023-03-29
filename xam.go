@@ -49,7 +49,6 @@ func WriteCSV(
 	}
 	w.Flush()
 
-	//done <- struct{}{}
 	close(done)
 }
 
@@ -148,6 +147,7 @@ func fileInfoFilter(fi os.FileInfo) bool {
 func WalkFSTree(fileDataChan chan FileData, rootPath string) {
 	count := int64(0)
 	size := int64(0)
+	start := time.Now()
 
 	filepath.Walk(
 		rootPath,
@@ -177,10 +177,16 @@ func WalkFSTree(fileDataChan chan FileData, rootPath string) {
 			}
 			count++
 			size += info.Size()
-			if count%1000 == 0 {
-				logrus.Debugf("progress: hashed %v files\t%v",
+			if count%10000 == 0 {
+				elapsed := time.Since(start)
+				byteRate := uint64(float64(size) / elapsed.Seconds())
+				fileRate := uint64(float64(count) / elapsed.Seconds())
+				logrus.Debugf("progress: hashed %v files\t%v\t%v/sec\t%v files/sec",
 					humanize.Comma(count),
-					humanize.Bytes(uint64(size)))
+					humanize.Bytes(uint64(size)),
+					humanize.Bytes(byteRate),
+					humanize.Comma(int64(fileRate)),
+				)
 			}
 			return nil // Never stop
 		})
