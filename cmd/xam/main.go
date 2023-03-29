@@ -10,6 +10,7 @@ import (
 	"io/ioutil"
 
 	"github.com/bradfitz/iter"
+	"github.com/google/gops/agent"
 	"github.com/hut8/xam"
 	log "github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
@@ -86,6 +87,9 @@ func mainAction(c *cli.Context) error {
 
 func main() {
 	log.SetLevel(log.DebugLevel)
+	if err := agent.Listen(agent.Options{}); err != nil {
+		log.Warnf("could not start gops agent: %v", err)
+	}
 	wd, _ := os.Getwd()
 
 	app := cli.NewApp()
