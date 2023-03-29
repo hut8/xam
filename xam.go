@@ -220,10 +220,10 @@ func HashFile(path string) ([]byte, []byte, error) {
 	case f = <-fileChan:
 		defer f.Close()
 	case err = <-errChan:
-		logrus.Warn("failed to open %v: %v", path, err)
+		logrus.Warnf("failed to open %v: %v", path, err)
 		return nil, nil, err
 	case <-alarm.C:
-		logrus.Error("timeout while opening %v", path)
+		logrus.Errorf("timeout while opening %v", path)
 		return nil, nil, merry.New("timeout")
 	}
 
