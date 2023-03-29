@@ -33,7 +33,11 @@ func buildIndex(root string) (string, error) {
 	writeDone := make(chan struct{})
 	go xam.WriteCSV(outputChan, csvFile, writeDone)
 
-	for range iter.N(runtime.NumCPU()) {
+	workers := runtime.NumCPU()
+	if workers > 8 {
+		workers = 8
+	}
+	for range iter.N(workers) {
 		wg.Add(1)
 		go func() {
 			xam.ComputeHashes(
