@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/bradfitz/iter"
+	mapset "github.com/deckarep/golang-set/v2"
 	"github.com/google/gops/agent"
 	"github.com/hut8/xam"
 	log "github.com/sirupsen/logrus"
@@ -24,6 +25,7 @@ var showRemote bool
 func buildIndex(root, csvPath string) error {
 	inputChan := make(chan xam.FileData)
 	outputChan := make(chan xam.FileData)
+	computedPaths := mapset.NewSet[string]()
 
 	st, err := os.Stat(csvPath)
 	exists := err == nil && st.Size() > 0
@@ -33,6 +35,12 @@ func buildIndex(root, csvPath string) error {
 		if err != nil {
 			log.Errorf("read existing csv failed: %v", err)
 		}
+		// loop here to avoid race condition
+		for _, ent := range entries {
+			computedPaths.Add(ent.Path)
+		}
+
+		// duplicate loop to feed into outputChan directly
 		go func() {
 			log.Debugf("loading %v existing entries", len(entries))
 			for _, ent := range entries {
@@ -68,7 +76,7 @@ func buildIndex(root, csvPath string) error {
 		}()
 	}
 
-	xam.WalkFSTree(inputChan, root)
+	xam.WalkFSTree(inputChan, root, computedPaths)
 
 	wg.Wait()         // wait on all hashers to stop
 	close(outputChan) // stop csv writer

@@ -15,6 +15,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/ansel1/merry"
+	mapset "github.com/deckarep/golang-set/v2"
 	humanize "github.com/dustin/go-humanize"
 	"github.com/hut8/gocsv"
 	"github.com/sirupsen/logrus"
@@ -173,7 +174,7 @@ func fileInfoFilter(fi os.FileInfo) bool {
 
 // WalkFSTree passes each file encountered while walking tree into fileDataChan
 // rootPath should be an absolute path
-func WalkFSTree(fileDataChan chan FileData, rootPath string) {
+func WalkFSTree(fileDataChan chan FileData, rootPath string, computedEntries mapset.Set[string]) {
 	count := int64(0)
 	size := int64(0)
 	start := time.Now()
@@ -188,6 +189,13 @@ func WalkFSTree(fileDataChan chan FileData, rootPath string) {
 			if relErr != nil {
 				panic(relErr)
 			}
+
+			// check if already computed
+			if computedEntries.Contains(relPath) {
+				return nil
+			}
+
+			// deal with buggy filesystems like ntfs-3g which returns invalid utf-8 filenames
 			nativePath := relPath
 			if !utf8.ValidString(nativePath) {
 				logrus.Errorf(`invalid string in path: "%v" bytes: %v`,
