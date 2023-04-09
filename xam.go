@@ -21,6 +21,25 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+type HashType int
+
+const (
+	HashTypeUnknown = HashType(iota)
+	HashTypeSHA1
+	HashTypeMD5
+)
+
+func HashTypeFromString(s string) HashType {
+	l := hex.DecodedLen(len(s))
+	switch l {
+	case sha1.Size:
+		return HashTypeSHA1
+	case md5.Size:
+		return HashTypeMD5
+	}
+	return HashTypeUnknown
+}
+
 // WriteCSV serializeds xam.FileData instances to be read by ReadCSV
 func WriteCSV(
 	fileData chan FileData,
@@ -115,6 +134,16 @@ type FileData struct {
 	SHA1       string      `csv:"sha1"`
 	MD5        string      `csv:"md5"`
 	ModTime    Time        `csv:"modified"`
+}
+
+func (fd *FileData) Hash(ht HashType) string {
+	switch ht {
+	case HashTypeSHA1:
+		return fd.SHA1
+	case HashTypeMD5:
+		return fd.MD5
+	}
+	panic("invalid hash type")
 }
 
 type Time struct {
